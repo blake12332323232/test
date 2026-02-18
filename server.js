@@ -5,11 +5,15 @@ const cors = require("cors");
 const { Client, GatewayIntentBits, Partials } = require("discord.js");
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+
+/* ==========================
+   MIDDLEWARE
+========================== */
+
 app.use(cors());
 app.use(express.json());
-app.use(express.static("public")); // put dashboard.html inside /public
-
-const PORT = process.env.PORT || 3000;
+app.use(express.static(__dirname)); // SERVE FILES FROM ROOT FOLDER
 
 /* ==========================
    DISCORD CLIENT
@@ -32,7 +36,15 @@ bot.once("ready", () => {
 bot.login(process.env.BOT_TOKEN);
 
 /* ==========================
-   ROUTES
+   ROOT ROUTE
+========================== */
+
+app.get("/", (req, res) => {
+  res.sendFile(__dirname + "/dashboard.html");
+});
+
+/* ==========================
+   API ROUTES
 ========================== */
 
 /* GET GUILDS */
@@ -48,6 +60,7 @@ app.get("/guilds", async (req, res) => {
 app.get("/channels/:guildId", async (req, res) => {
   try {
     const guild = await bot.guilds.fetch(req.params.guildId);
+
     const channels = guild.channels.cache
       .filter(c => c.isTextBased())
       .map(c => ({
@@ -130,6 +143,7 @@ app.post("/send-message", async (req, res) => {
     const { channelId, content } = req.body;
 
     const channel = await bot.channels.fetch(channelId);
+
     if (!channel.isTextBased())
       return res.status(400).json({ error: "Not text channel" });
 
@@ -176,7 +190,7 @@ app.post("/remove-role", async (req, res) => {
   }
 });
 
-/* KICK */
+/* KICK MEMBER */
 app.post("/kick", async (req, res) => {
   try {
     const { guildId, memberId } = req.body;
@@ -193,13 +207,12 @@ app.post("/kick", async (req, res) => {
   }
 });
 
-/* BAN */
+/* BAN MEMBER */
 app.post("/ban", async (req, res) => {
   try {
     const { guildId, memberId } = req.body;
 
     const guild = await bot.guilds.fetch(guildId);
-
     await guild.members.ban(memberId);
 
     res.json({ success: true });
