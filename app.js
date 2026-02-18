@@ -1,162 +1,173 @@
-let selectedGuild = null;
-let selectedChannel = null;
-let channelsCache = [];
-let membersCache = [];
+// ===============================
+// Secure WebSocket (Render safe)
+// ===============================
+const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+const socket = new WebSocket(`${protocol}//${location.host}`);
 
-let ws = new WebSocket(`ws://${location.host}`);
-
-ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    if(data.type==="newMessage" && data.channelId===selectedChannel)
-        addMessage(data.author,data.content);
+socket.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.type === "log") {
+    addLog(`${data.time} - ${data.action}`);
+  }
 };
 
+// ===============================
+// DOM Loaded
+// ===============================
+document.addEventListener("DOMContentLoaded", () => {
+  loadGuilds();
+  loadLogs();
+});
+
+// ===============================
+// Load Servers
+// ===============================
 async function loadGuilds() {
+  try {
     const res = await fetch("/guilds");
     const guilds = await res.json();
-    const list = document.getElementById("guildList");
-    list.innerHTML="";
-    guilds.forEach(g=>{
-        const li=document.createElement("li");
-        li.innerText=g.name;
-        li.onclick=()=>selectGuild(g.id);
-        list.appendChild(li);
+
+    const guildList = document.getElementById("guilds");
+    guildList.innerHTML = "";
+
+    guilds.forEach(guild => {
+      const li = document.createElement("li");
+      li.textContent = guild.name;
+      li.onclick = () => {
+        loadChannels(guild.id);
+        loadMembers(guild.id);
+      };
+      guildList.appendChild(li);
     });
+
+  } catch (err) {
+    console.error("Guild load error:", err);
+  }
 }
 
-async function selectGuild(id){
-    selectedGuild=id;
-    await loadChannels(id);
-    await loadMembers(id);
-}
+// ===============================
+// Load Channels
+// ===============================
+async function loadChannels(guildId) {
+  try {
+    const res = await fetch(`/channels/${guildId}`);
+    const channels = await res.json();
 
-async function loadChannels(guildId){
-    const res=await fetch(`/channels/${guildId}`);
-    channelsCache=await res.json();
-    renderChannels(channelsCache);
-}
+    const channelList = document.getElementById("channels");
+    channelList.innerHTML = "";
 
-function renderChannels(listData){
-    const list=document.getElementById("channelList");
-    list.innerHTML="";
-    listData.forEach(c=>{
-        const li=document.createElement("li");
-        li.innerText="#"+c.name;
-        li.onclick=()=>selectChannel(c.id,c.name);
-        list.appendChild(li);
+    channels.forEach(channel => {
+      const li = document.createElement("li");
+      li.textContent = channel.name;
+      li.onclick = () => {
+        document.getElementById("selectedChannel").value = channel.id;
+      };
+      channelList.appendChild(li);
     });
+
+  } catch (err) {
+    console.error("Channel load error:", err);
+  }
 }
 
-function filterChannels(search){
-    renderChannels(channelsCache.filter(c=>c.name.toLowerCase().includes(search.toLowerCase())));
-}
+// ===============================
+// Load Members
+// ===============================
+async function loadMembers(guildId) {
+  try {
+    const res = await fetch(`/members/${guildId}`);
+    const members = await res.json();
 
-function selectChannel(id,name){
-    selectedChannel=id;
-    document.getElementById("channelTitle").innerText="#"+name;
-    document.getElementById("messages").innerHTML="";
-}
+    const memberList = document.getElementById("members");
+    memberList.innerHTML = "";
 
-async function loadMembers(guildId){
-    const res=await fetch(`/members/${guildId}`);
-    membersCache=await res.json();
-    renderMembers(membersCache);
-}
-
-function renderMembers(listData){
-    const list=document.getElementById("memberList");
-    list.innerHTML="";
-    listData.forEach(m=>{
-        const li=document.createElement("li");
-        li.innerHTML=`${m.username} 
-            <button onclick="kickMember('${m.id}')">Kick</button>
-            <button onclick="banMember('${m.id}')">Ban</button>`;
-        list.appendChild(li);
+    members.forEach(member => {
+      const li = document.createElement("li");
+      li.textContent = member.username;
+      li.onclick = () => {
+        document.getElementById("selectedMember").value = member.id;
+        document.getElementById("selectedGuild").value = guildId;
+      };
+      memberList.appendChild(li);
     });
+
+  } catch (err) {
+    console.error("Member load error:", err);
+  }
 }
 
-function filterMembers(search){
-    renderMembers(membersCache.filter(m=>m.username.toLowerCase().includes(search.toLowerCase())));
+// ===============================
+// Send Message
+// ===============================
+async function sendMessage() {
+  const channelId = document.getElementById("selectedChannel").value;
+  const message = document.getElementById("messageInput").value;
+
+  if (!channelId || !message) return alert("Select channel and enter message");
+
+  await fetch("/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ channelId, message })
+  });
+
+  document.getElementById("messageInput").value = "";
 }
 
-async function kickMember(userId){
-    await fetch(`/kick/${selectedGuild}/${userId}`,{method:"POST"});
-    alert("Member kicked"); loadMembers(selectedGuild);
+// ===============================
+// Kick Member
+// ===============================
+async function kickMember() {
+  const guildId = document.getElementById("selectedGuild").value;
+  const userId = document.getElementById("selectedMember").value;
+
+  if (!guildId || !userId) return alert("Select member");
+
+  await fetch("/kick", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ guildId, userId })
+  });
 }
 
-async function banMember(userId){
-    await fetch(`/ban/${selectedGuild}/${userId}`,{method:"POST"});
-    alert("Member banned"); loadMembers(selectedGuild);
+// ===============================
+// Ban Member
+// ===============================
+async function banMember() {
+  const guildId = document.getElementById("selectedGuild").value;
+  const userId = document.getElementById("selectedMember").value;
+
+  if (!guildId || !userId) return alert("Select member");
+
+  await fetch("/ban", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ guildId, userId })
+  });
 }
 
-async function sendMessage(){
-    const input=document.getElementById("messageInput");
-    if(!selectedChannel)return;
-    await fetch(`/send/${selectedChannel}`,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({message:input.value})
+// ===============================
+// Load Logs
+// ===============================
+async function loadLogs() {
+  try {
+    const res = await fetch("/logs");
+    const logs = await res.json();
+
+    logs.forEach(log => {
+      addLog(`${log.timestamp} - ${log.action}`);
     });
-    input.value="";
+  } catch (err) {
+    console.error("Log load error:", err);
+  }
 }
 
-function addMessage(author,content){
-    const div=document.createElement("div");
-    div.className="message";
-    div.innerHTML=`<strong>${author}</strong>: ${content} <button onclick="deleteMessage(this)">X</button>`;
-    document.getElementById("messages").appendChild(div);
+// ===============================
+// Add Log To UI
+// ===============================
+function addLog(text) {
+  const logBox = document.getElementById("logs");
+  const div = document.createElement("div");
+  div.textContent = text;
+  logBox.prepend(div);
 }
-
-function deleteMessage(button){
-    button.parentElement.remove();
-}
-
-function openEmbedBuilder(){ document.getElementById("embedModal").classList.remove("hidden"); }
-function closeEmbed(){ document.getElementById("embedModal").classList.add("hidden"); }
-
-async function sendEmbed(){
-    await fetch(`/embed/${selectedChannel}`,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-            title:embedTitle.value,
-            description:embedDesc.value,
-            color:parseInt(embedColor.value||"5865F2",16),
-            footer:embedFooter.value
-        })
-    });
-    closeEmbed();
-}
-
-function toggleTheme(){ document.body.classList.toggle("light"); }
-
-function openLogs(){ document.getElementById("logsPanel").classList.remove("hidden"); loadLogs(); }
-function closeLogs(){ document.getElementById("logsPanel").classList.add("hidden"); }
-async function loadLogs(){
-    const res=await fetch("/logs");
-    const logs=await res.json();
-    const container=document.getElementById("logsContainer");
-    container.innerHTML="";
-    logs.forEach(l=>{
-        const div=document.createElement("div");
-        div.innerText=`[${l.timestamp}] ${l.action}`;
-        container.appendChild(div);
-    });
-}
-
-function openCommandPanel(){ document.getElementById("commandPanel").classList.remove("hidden"); }
-function closeCommandPanel(){ document.getElementById("commandPanel").classList.add("hidden"); }
-
-async function executeCommand(){
-    const name=document.getElementById("commandName").value.replace("/","");
-    const args=document.getElementById("commandArgs").value || "{}";
-    await fetch(`/execute/${selectedGuild}/${name}`,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:args
-    });
-    alert("Command executed");
-    closeCommandPanel();
-}
-
-loadGuilds();
