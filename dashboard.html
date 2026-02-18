@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Discord Overlord Panel</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <h2>👑 Servers</h2>
+        <ul id="guildList"></ul>
+        <hr>
+        <button onclick="toggleTheme()">Toggle Theme</button>
+        <button onclick="openLogs()">Admin Logs</button>
+        <button onclick="openCommandPanel()">Slash Command</button>
+    </div>
+
+    <!-- Channels -->
+    <div class="channels">
+        <h2>📂 Channels</h2>
+        <input type="text" placeholder="Search channels..." oninput="filterChannels(this.value)">
+        <ul id="channelList"></ul>
+    </div>
+
+    <!-- Main Chat -->
+    <div class="chat">
+
+        <div class="chat-header">
+            <span id="channelTitle">Select Channel</span>
+            <div>
+                <button onclick="openEmbedBuilder()">Embed</button>
+            </div>
+        </div>
+
+        <div id="messages" class="messages"></div>
+
+        <div class="chat-input">
+            <input type="text" id="messageInput" placeholder="Send message...">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+
+    </div>
+
+    <!-- Members -->
+    <div class="members">
+        <h2>👥 Members</h2>
+        <input type="text" placeholder="Search members..." oninput="filterMembers(this.value)">
+        <ul id="memberList"></ul>
+    </div>
+
+</div>
+
+<!-- Embed Builder Modal -->
+<div id="embedModal" class="modal hidden">
+    <div class="modal-content">
+        <h2>Embed Builder</h2>
+        <input id="embedTitle" placeholder="Title">
+        <textarea id="embedDesc" placeholder="Description"></textarea>
+        <input id="embedColor" placeholder="Hex Color (5865F2)">
+        <input id="embedFooter" placeholder="Footer">
+        <button onclick="sendEmbed()">Send Embed</button>
+        <button onclick="closeEmbed()">Close</button>
+    </div>
+</div>
+
+<!-- Admin Logs Modal -->
+<div id="logsPanel" class="modal hidden">
+    <div class="modal-content logsContent">
+        <h2>Admin Logs</h2>
+        <div id="logsContainer"></div>
+        <button onclick="closeLogs()">Close</button>
+    </div>
+</div>
+
+<!-- Slash Command Modal -->
+<div id="commandPanel" class="modal hidden">
+    <div class="modal-content">
+        <h2>Slash Command Console</h2>
+        <input id="commandName" placeholder="/command">
+        <input id="commandArgs" placeholder="Arguments JSON">
+        <button onclick="executeCommand()">Execute</button>
+        <button onclick="closeCommandPanel()">Close</button>
+    </div>
+</div>
+
+</body>
+<script src="app.js"></script>
+</html>
