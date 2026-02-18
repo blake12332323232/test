@@ -3,18 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <title>Overlord Panel</title>
-
 <style>
 body {
   margin: 0;
   font-family: "Segoe UI", sans-serif;
-  background-color: #313338;
-  color: #f2f3f5;
+  background: #313338;
+  color: white;
   display: flex;
   height: 100vh;
 }
 
-/* SERVER BAR */
 .server-bar {
   width: 72px;
   background: #1e1f22;
@@ -34,15 +32,19 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 12px;
 }
 
-/* CHANNEL SIDEBAR */
 .sidebar {
-  width: 240px;
+  width: 260px;
   background: #2b2d31;
   padding: 10px;
   overflow-y: auto;
+}
+
+.sidebar h3 {
+  font-size: 13px;
+  color: #b5bac1;
+  margin: 10px 0 5px;
 }
 
 .sidebar li {
@@ -56,17 +58,10 @@ body {
   background: #404249;
 }
 
-/* CHAT AREA */
-.chat-container {
+.chat {
   flex: 1;
   display: flex;
   flex-direction: column;
-}
-
-.chat-header {
-  padding: 15px;
-  border-bottom: 1px solid #232428;
-  font-weight: bold;
 }
 
 .messages {
@@ -76,73 +71,61 @@ body {
 }
 
 .message {
-  display: flex;
-  margin-bottom: 15px;
-}
-
-.message img {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  margin-right: 10px;
-}
-
-.message-content {
-  max-width: 80%;
-}
-
-.message-author {
-  font-weight: bold;
-  font-size: 14px;
-}
-
-.message-time {
-  font-size: 11px;
-  color: #949ba4;
-  margin-left: 8px;
-}
-
-.message-text {
-  font-size: 14px;
+  margin-bottom: 10px;
 }
 
 .chat-input {
-  padding: 15px;
-  border-top: 1px solid #232428;
+  padding: 10px;
   display: flex;
+  border-top: 1px solid #232428;
 }
 
 .chat-input input {
   flex: 1;
-  padding: 10px;
-  border-radius: 6px;
-  border: none;
+  padding: 8px;
   background: #383a40;
+  border: none;
+  border-radius: 4px;
   color: white;
 }
 
 .chat-input button {
   margin-left: 10px;
-  padding: 10px 15px;
+  padding: 8px 15px;
   background: #5865f2;
   border: none;
-  border-radius: 6px;
+  border-radius: 4px;
   color: white;
   cursor: pointer;
 }
+
+.role-panel {
+  width: 250px;
+  background: #1e1f22;
+  padding: 10px;
+  border-left: 1px solid #232428;
+}
+
+.role-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
 </style>
 </head>
-
 <body>
 
 <div class="server-bar" id="serverBar"></div>
 
 <div class="sidebar">
+  <h3>CHANNELS</h3>
   <ul id="channels"></ul>
+
+  <h3>MEMBERS</h3>
+  <ul id="members"></ul>
 </div>
 
-<div class="chat-container">
-  <div class="chat-header" id="channelName">Select a channel</div>
+<div class="chat">
   <div class="messages" id="messages"></div>
 
   <div class="chat-input">
@@ -151,77 +134,80 @@ body {
   </div>
 </div>
 
+<div class="role-panel">
+  <h3>Role Manager</h3>
+  <div id="roles"></div>
+</div>
+
 <script>
 let selectedGuild = null;
 let selectedChannel = null;
+let selectedMember = null;
+let guildRoles = [];
 
 /* LOAD SERVERS */
 async function loadGuilds() {
   const res = await fetch("/guilds");
   const guilds = await res.json();
 
-  const bar = document.getElementById("serverBar");
   guilds.forEach(g => {
     const div = document.createElement("div");
     div.className = "server-item";
     div.innerText = g.name.charAt(0);
     div.onclick = () => selectGuild(g.id);
-    bar.appendChild(div);
+    serverBar.appendChild(div);
   });
 }
 
 /* SELECT SERVER */
 async function selectGuild(id) {
   selectedGuild = id;
-  const res = await fetch(`/channels/${id}`);
-  const channels = await res.json();
 
-  const list = document.getElementById("channels");
-  list.innerHTML = "";
+  const chRes = await fetch(`/channels/${id}`);
+  const channels = await chRes.json();
 
+  channelsList.innerHTML = "";
   channels.forEach(c => {
     const li = document.createElement("li");
     li.innerText = "# " + c.name;
-    li.onclick = () => selectChannel(c.id, c.name);
-    list.appendChild(li);
+    li.onclick = () => selectChannel(c.id);
+    channelsList.appendChild(li);
   });
+
+  const memRes = await fetch(`/members/${id}`);
+  const members = await memRes.json();
+
+  membersList.innerHTML = "";
+  members.forEach(m => {
+    const li = document.createElement("li");
+    li.innerText = m.username;
+    li.onclick = () => selectMember(m.id);
+    membersList.appendChild(li);
+  });
+
+  const roleRes = await fetch(`/roles/${id}`);
+  guildRoles = await roleRes.json();
 }
 
 /* SELECT CHANNEL */
-async function selectChannel(id, name) {
+async function selectChannel(id) {
   selectedChannel = id;
-  document.getElementById("channelName").innerText = "# " + name;
 
   const res = await fetch(`/messages/${id}`);
   const messages = await res.json();
 
-  const container = document.getElementById("messages");
-  container.innerHTML = "";
-
+  messagesDiv.innerHTML = "";
   messages.forEach(m => {
     const div = document.createElement("div");
     div.className = "message";
-
-    div.innerHTML = `
-      <img src="${m.avatar}">
-      <div class="message-content">
-        <div>
-          <span class="message-author">${m.author}</span>
-          <span class="message-time">${new Date(m.time).toLocaleTimeString()}</span>
-        </div>
-        <div class="message-text">${m.content}</div>
-      </div>
-    `;
-
-    container.appendChild(div);
+    div.innerHTML = `<strong>${m.author}</strong>: ${m.content}`;
+    messagesDiv.appendChild(div);
   });
-
-  container.scrollTop = container.scrollHeight;
 }
 
 /* SEND MESSAGE */
 async function sendMessage() {
-  const content = document.getElementById("messageInput").value;
+  const content = messageInput.value;
   if (!content || !selectedChannel) return;
 
   await fetch("/send-message", {
@@ -233,9 +219,68 @@ async function sendMessage() {
     })
   });
 
-  document.getElementById("messageInput").value = "";
-  selectChannel(selectedChannel, document.getElementById("channelName").innerText.replace("# ",""));
+  messageInput.value = "";
+  selectChannel(selectedChannel);
 }
+
+/* SELECT MEMBER → SHOW ROLES */
+async function selectMember(memberId) {
+  selectedMember = memberId;
+
+  rolesDiv.innerHTML = "";
+
+  guildRoles.forEach(r => {
+    const div = document.createElement("div");
+    div.className = "role-item";
+
+    div.innerHTML = `
+      <span>${r.name}</span>
+      <div>
+        <button onclick="addRole('${r.id}')">+</button>
+        <button onclick="removeRole('${r.id}')">-</button>
+      </div>
+    `;
+
+    rolesDiv.appendChild(div);
+  });
+}
+
+/* ADD ROLE */
+async function addRole(roleId) {
+  if (!selectedMember) return;
+
+  await fetch("/add-role", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      guildId: selectedGuild,
+      memberId: selectedMember,
+      roleId
+    })
+  });
+}
+
+/* REMOVE ROLE */
+async function removeRole(roleId) {
+  if (!selectedMember) return;
+
+  await fetch("/remove-role", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      guildId: selectedGuild,
+      memberId: selectedMember,
+      roleId
+    })
+  });
+}
+
+const serverBar = document.getElementById("serverBar");
+const channelsList = document.getElementById("channels");
+const membersList = document.getElementById("members");
+const messagesDiv = document.getElementById("messages");
+const rolesDiv = document.getElementById("roles");
+const messageInput = document.getElementById("messageInput");
 
 loadGuilds();
 </script>
