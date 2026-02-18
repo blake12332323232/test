@@ -1,91 +1,301 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Discord Overlord Panel</title>
-    <link rel="stylesheet" href="style.css">
+  <title>Overlord Admin Panel</title>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0f1117;
+      color: white;
+      display: flex;
+      margin: 0;
+    }
+
+    .sidebar {
+      width: 250px;
+      background: #1a1d26;
+      padding: 20px;
+      overflow-y: auto;
+      height: 100vh;
+    }
+
+    .main {
+      flex: 1;
+      padding: 20px;
+    }
+
+    h2 {
+      margin-top: 0;
+    }
+
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    li {
+      padding: 6px;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+
+    li:hover {
+      background: #2a2f3d;
+    }
+
+    input, select, button {
+      margin: 5px 0;
+      padding: 6px;
+      border-radius: 6px;
+      border: none;
+    }
+
+    button {
+      background: #5865F2;
+      color: white;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #4752c4;
+    }
+
+    .section {
+      margin-bottom: 30px;
+    }
+
+    #logs {
+      background: #1a1d26;
+      padding: 10px;
+      height: 200px;
+      overflow-y: auto;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+  </style>
 </head>
 <body>
 
-<div class="container">
+<div class="sidebar">
+  <h2>Servers</h2>
+  <ul id="guilds"></ul>
 
-    <!-- Sidebar -->
-    <div class="sidebar">
-        <h2>👑 Servers</h2>
-        <ul id="guildList"></ul>
-        <hr>
-        <button onclick="toggleTheme()">Toggle Theme</button>
-        <button onclick="openLogs()">Admin Logs</button>
-        <button onclick="openCommandPanel()">Slash Command</button>
-    </div>
+  <h2>Channels</h2>
+  <ul id="channels"></ul>
 
-    <!-- Channels -->
-    <div class="channels">
-        <h2>📂 Channels</h2>
-        <input type="text" placeholder="Search channels..." oninput="filterChannels(this.value)">
-        <ul id="channelList"></ul>
-    </div>
-
-    <!-- Main Chat -->
-    <div class="chat">
-
-        <div class="chat-header">
-            <span id="channelTitle">Select Channel</span>
-            <div>
-                <button onclick="openEmbedBuilder()">Embed</button>
-            </div>
-        </div>
-
-        <div id="messages" class="messages"></div>
-
-        <div class="chat-input">
-            <input type="text" id="messageInput" placeholder="Send message...">
-            <button onclick="sendMessage()">Send</button>
-        </div>
-
-    </div>
-
-    <!-- Members -->
-    <div class="members">
-        <h2>👥 Members</h2>
-        <input type="text" placeholder="Search members..." oninput="filterMembers(this.value)">
-        <ul id="memberList"></ul>
-    </div>
-
+  <h2>Members</h2>
+  <ul id="members"></ul>
 </div>
 
-<!-- Embed Builder Modal -->
-<div id="embedModal" class="modal hidden">
-    <div class="modal-content">
-        <h2>Embed Builder</h2>
-        <input id="embedTitle" placeholder="Title">
-        <textarea id="embedDesc" placeholder="Description"></textarea>
-        <input id="embedColor" placeholder="Hex Color (5865F2)">
-        <input id="embedFooter" placeholder="Footer">
-        <button onclick="sendEmbed()">Send Embed</button>
-        <button onclick="closeEmbed()">Close</button>
-    </div>
+<div class="main">
+  <h1>Overlord Control Panel</h1>
+
+  <input type="hidden" id="selectedChannel">
+  <input type="hidden" id="selectedMember">
+  <input type="hidden" id="selectedGuild">
+
+  <!-- Send Message -->
+  <div class="section">
+    <h2>Send Message</h2>
+    <input id="messageInput" placeholder="Enter message">
+    <button onclick="sendMessage()">Send</button>
+  </div>
+
+  <!-- Moderation -->
+  <div class="section">
+    <h2>Moderation</h2>
+    <button onclick="kickMember()">Kick</button>
+    <button onclick="banMember()">Ban</button>
+  </div>
+
+  <!-- Role Management -->
+  <div class="section">
+    <h2>Role Management</h2>
+
+    <select id="roleSelect"></select><br>
+
+    <button onclick="addRole()">Add Role</button>
+    <button onclick="removeRole()">Remove Role</button>
+  </div>
+
+  <!-- Logs -->
+  <div class="section">
+    <h2>Live Logs</h2>
+    <div id="logs"></div>
+  </div>
 </div>
 
-<!-- Admin Logs Modal -->
-<div id="logsPanel" class="modal hidden">
-    <div class="modal-content logsContent">
-        <h2>Admin Logs</h2>
-        <div id="logsContainer"></div>
-        <button onclick="closeLogs()">Close</button>
-    </div>
-</div>
+<script>
+// ===============================
+// Secure WebSocket
+// ===============================
+const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+const socket = new WebSocket(`${protocol}//${location.host}`);
 
-<!-- Slash Command Modal -->
-<div id="commandPanel" class="modal hidden">
-    <div class="modal-content">
-        <h2>Slash Command Console</h2>
-        <input id="commandName" placeholder="/command">
-        <input id="commandArgs" placeholder="Arguments JSON">
-        <button onclick="executeCommand()">Execute</button>
-        <button onclick="closeCommandPanel()">Close</button>
-    </div>
-</div>
+socket.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.type === "log") {
+    addLog(`${data.time} - ${data.action}`);
+  }
+};
+
+// ===============================
+document.addEventListener("DOMContentLoaded", () => {
+  loadGuilds();
+  loadLogs();
+});
+
+// ===============================
+async function loadGuilds() {
+  const res = await fetch("/guilds");
+  const guilds = await res.json();
+
+  const guildList = document.getElementById("guilds");
+  guildList.innerHTML = "";
+
+  guilds.forEach(g => {
+    const li = document.createElement("li");
+    li.textContent = g.name;
+    li.onclick = () => {
+      document.getElementById("selectedGuild").value = g.id;
+      loadChannels(g.id);
+      loadMembers(g.id);
+      loadRoles(g.id);
+    };
+    guildList.appendChild(li);
+  });
+}
+
+// ===============================
+async function loadChannels(guildId) {
+  const res = await fetch(`/channels/${guildId}`);
+  const channels = await res.json();
+
+  const list = document.getElementById("channels");
+  list.innerHTML = "";
+
+  channels.forEach(c => {
+    const li = document.createElement("li");
+    li.textContent = c.name;
+    li.onclick = () => {
+      document.getElementById("selectedChannel").value = c.id;
+    };
+    list.appendChild(li);
+  });
+}
+
+// ===============================
+async function loadMembers(guildId) {
+  const res = await fetch(`/members/${guildId}`);
+  const members = await res.json();
+
+  const list = document.getElementById("members");
+  list.innerHTML = "";
+
+  members.forEach(m => {
+    const li = document.createElement("li");
+    li.textContent = m.username;
+    li.onclick = () => {
+      document.getElementById("selectedMember").value = m.id;
+    };
+    list.appendChild(li);
+  });
+}
+
+// ===============================
+async function loadRoles(guildId) {
+  const res = await fetch(`/roles/${guildId}`);
+  const roles = await res.json();
+
+  const select = document.getElementById("roleSelect");
+  select.innerHTML = "";
+
+  roles.forEach(role => {
+    const option = document.createElement("option");
+    option.value = role.id;
+    option.textContent = role.name;
+    select.appendChild(option);
+  });
+}
+
+// ===============================
+async function sendMessage() {
+  const channelId = selectedChannel.value;
+  const message = messageInput.value;
+
+  await fetch("/send", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ channelId, message })
+  });
+
+  messageInput.value = "";
+}
+
+// ===============================
+async function kickMember() {
+  await fetch("/kick", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      guildId: selectedGuild.value,
+      userId: selectedMember.value
+    })
+  });
+}
+
+// ===============================
+async function banMember() {
+  await fetch("/ban", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      guildId: selectedGuild.value,
+      userId: selectedMember.value
+    })
+  });
+}
+
+// ===============================
+async function addRole() {
+  await fetch("/addRole", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      guildId: selectedGuild.value,
+      userId: selectedMember.value,
+      roleId: roleSelect.value
+    })
+  });
+}
+
+// ===============================
+async function removeRole() {
+  await fetch("/removeRole", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      guildId: selectedGuild.value,
+      userId: selectedMember.value,
+      roleId: roleSelect.value
+    })
+  });
+}
+
+// ===============================
+async function loadLogs() {
+  const res = await fetch("/logs");
+  const logs = await res.json();
+  logs.forEach(log => addLog(`${log.timestamp} - ${log.action}`));
+}
+
+function addLog(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  logs.prepend(div);
+}
+</script>
 
 </body>
-<script src="app.js"></script>
 </html>
