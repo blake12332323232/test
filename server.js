@@ -1,127 +1,42 @@
-const express = require("express");
-const path = require("path");
-const { Client, GatewayIntentBits, PermissionsBitField } = require("discord.js");
-const WebSocket = require("ws");
-const sqlite3 = require("sqlite3").verbose();
 require("dotenv").config();
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-const ACCESS_CODE = process.env.ACCESS_CODE;
-const BOT_TOKEN = process.env.BOT_TOKEN;
+const express = require("express");
+const cors = require("cors");
+const { Client, GatewayIntentBits, Partials } = require("discord.js");
 
-/* ===============================
-   DISCORD BOT SETUP
-=================================*/
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(express.static("public")); // put dashboard.html inside /public
+
+const PORT = process.env.PORT || 3000;
+
+/* ==========================
+   DISCORD CLIENT
+========================== */
 
 const bot = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,      // REQUIRED
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent     // REQUIRED
-  ]
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.MessageContent
+  ],
+  partials: [Partials.Channel]
 });
 
-bot.on("clientReady", () => {
-  console.log(`Bot logged in as ${bot.user.tag}`);
+bot.once("ready", () => {
+  console.log(`Logged in as ${bot.user.tag}`);
 });
 
-bot.login(BOT_TOKEN);
+bot.login(process.env.BOT_TOKEN);
 
-/* ===============================
-   DATABASE SETUP
-=================================*/
+/* ==========================
+   ROUTES
+========================== */
 
-const db = new sqlite3.Database("database.sqlite");
-
-db.run(`
-  CREATE TABLE IF NOT EXISTS logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    action TEXT,
-    timestamp TEXT
-  )
-`);
-
-function logAction(action) {
-  const time = new Date().toISOString();
-  db.run("INSERT INTO logs (action, timestamp) VALUES (?, ?)", [action, time]);
-  broadcast({ type: "log", action, time });
-}
-
-/* ===============================
-   WEBSOCKET SETUP
-=================================*/
-
-const server = app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
-
-const wss = new WebSocket.Server({ noServer: true });
-let sockets = [];
-
-wss.on("connection", (ws) => {
-  sockets.push(ws);
-  ws.on("close", () => {
-    sockets = sockets.filter(s => s !== ws);
-  });
-});
-
-function broadcast(data) {
-  sockets.forEach(ws => ws.send(JSON.stringify(data)));
-}
-
-server.on("upgrade", (request, socket, head) => {
-  wss.handleUpgrade(request, socket, head, (ws) => {
-    wss.emit("connection", ws, request);
-  });
-});
-
-/* ===============================
-   EXPRESS MIDDLEWARE
-=================================*/
-
-app.use(express.json());
-app.use(express.static(__dirname)); // serve files from ROOT
-
-/* ===============================
-   AUTH ROUTE
-=================================*/
-
-app.post("/login", (req, res) => {
-  const { code } = req.body;
-  if (code === ACCESS_CODE) {
-    res.json({ success: true });
-  } else {
-    res.status(401).json({ success: false });
-  }
-});
-
-/* ===============================
-   ROOT ROUTE
-=================================*/
-
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "login.html"));
-});
-
-/* ===============================
-   DEBUG ROUTE
-=================================*/
-
-app.get("/debug", (req, res) => {
-  res.json({
-    ready: bot.isReady(),
-    guildCount: bot.guilds.cache.size,
-    guilds: bot.guilds.cache.map(g => g.name)
-  });
-});
-
-/* ===============================
-   GET SERVERS
-=================================*/
-
-app.get("/guilds", (req, res) => {
+/* GET GUILDS */
+app.get("/guilds", async (req, res) => {
   const guilds = bot.guilds.cache.map(g => ({
     id: g.id,
     name: g.name
@@ -129,168 +44,69 @@ app.get("/guilds", (req, res) => {
   res.json(guilds);
 });
 
-/* ===============================
-   GET CHANNELS
-=================================*/
+/* GET CHANNELS */
+app.get("/channels/:guildId", async (req, res) => {
+  try {
+    const guild = await bot.guilds.fetch(req.params.guildId);
+    const channels = guild.channels.cache
+      .filter(c => c.isTextBased())
+      .map(c => ({
+        id: c.id,
+        name: c.name
+      }));
 
-app.get("/channels/:guildId", (req, res) => {
-  const guild = bot.guilds.cache.get(req.params.guildId);
-  if (!guild) return res.json([]);
-
-  const channels = guild.channels.cache
-    .filter(c => c.isTextBased())
-    .map(c => ({
-      id: c.id,
-      name: c.name
-    }));
-
-  res.json(channels);
+    res.json(channels);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch channels" });
+  }
 });
 
-/* ===============================
-   GET MEMBERS
-=================================*/
-
+/* GET MEMBERS */
 app.get("/members/:guildId", async (req, res) => {
-  const guild = bot.guilds.cache.get(req.params.guildId);
-  if (!guild) return res.json([]);
-
-  await guild.members.fetch(); // VERY IMPORTANT
-
-  const members = guild.members.cache.map(m => ({
-    id: m.id,
-    username: m.user.username
-  }));
-
-  res.json(members);
-});
-
-/* ===============================
-   SEND MESSAGE
-=================================*/
-
-app.post("/send", async (req, res) => {
-  const { channelId, message } = req.body;
-
   try {
-    const channel = await bot.channels.fetch(channelId);
-    if (!channel || !channel.isTextBased())
-      return res.status(400).json({ error: "Invalid channel" });
+    const guild = await bot.guilds.fetch(req.params.guildId);
+    const members = await guild.members.fetch();
 
-    await channel.send(message);
-    logAction(`Message sent to ${channel.name}`);
-    res.json({ success: true });
+    res.json(
+      members.map(m => ({
+        id: m.id,
+        username: m.user.username
+      }))
+    );
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch members" });
   }
 });
 
-/* ===============================
-   KICK MEMBER
-=================================*/
-
-app.post("/kick", async (req, res) => {
-  const { guildId, userId } = req.body;
-
+/* GET ROLES */
+app.get("/roles/:guildId", async (req, res) => {
   try {
-    const guild = bot.guilds.cache.get(guildId);
-    if (!guild) return res.status(404).json({ error: "Guild not found" });
+    const guild = await bot.guilds.fetch(req.params.guildId);
 
-    const member = await guild.members.fetch(userId);
-    await member.kick();
-
-    logAction(`Kicked ${member.user.username}`);
-    res.json({ success: true });
+    res.json(
+      guild.roles.cache
+        .filter(r => r.name !== "@everyone")
+        .map(r => ({
+          id: r.id,
+          name: r.name
+        }))
+    );
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch roles" });
   }
 });
 
-/* ===============================
-   BAN MEMBER
-=================================*/
-
-app.post("/ban", async (req, res) => {
-  const { guildId, userId } = req.body;
-
-  try {
-    const guild = bot.guilds.cache.get(guildId);
-    if (!guild) return res.status(404).json({ error: "Guild not found" });
-
-    await guild.members.ban(userId);
-
-    logAction(`Banned user ID ${userId}`);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/* ===============================
-   GET LOGS
-=================================*/
-
-app.get("/logs", (req, res) => {
-  db.all("SELECT * FROM logs ORDER BY id DESC LIMIT 50", (err, rows) => {
-    if (err) return res.json([]);
-    res.json(rows);
-  });
-});
-
-// ===============================
-// GET ROLES
-// ===============================
-app.get("/roles/:guildId", (req, res) => {
-  const guild = bot.guilds.cache.get(req.params.guildId);
-  if (!guild) return res.json([]);
-
-  const roles = guild.roles.cache
-    .filter(r => r.name !== "@everyone")
-    .map(r => ({
-      id: r.id,
-      name: r.name
-    }));
-
-  res.json(roles);
-});
-
-// ===============================
-// ADD ROLE
-// ===============================
-app.post("/addRole", async (req, res) => {
-  const { guildId, userId, roleId } = req.body;
-
-  try {
-    const guild = bot.guilds.cache.get(guildId);
-    const member = await guild.members.fetch(userId);
-    await member.roles.add(roleId);
-    logAction(`Added role to ${member.user.username}`);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ===============================
-// REMOVE ROLE
-// ===============================
-app.post("/removeRole", async (req, res) => {
-  const { guildId, userId, roleId } = req.body;
-
-  try {
-    const guild = bot.guilds.cache.get(guildId);
-    const member = await guild.members.fetch(userId);
-    await member.roles.remove(roleId);
-    logAction(`Removed role from ${member.user.username}`);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
+/* GET MESSAGES */
 app.get("/messages/:channelId", async (req, res) => {
   try {
     const channel = await bot.channels.fetch(req.params.channelId);
+
+    if (!channel.isTextBased())
+      return res.status(400).json({ error: "Not a text channel" });
+
     const messages = await channel.messages.fetch({ limit: 50 });
 
     const formatted = messages.map(m => ({
@@ -306,4 +122,97 @@ app.get("/messages/:channelId", async (req, res) => {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch messages" });
   }
+});
+
+/* SEND MESSAGE */
+app.post("/send-message", async (req, res) => {
+  try {
+    const { channelId, content } = req.body;
+
+    const channel = await bot.channels.fetch(channelId);
+    if (!channel.isTextBased())
+      return res.status(400).json({ error: "Not text channel" });
+
+    await channel.send(content);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to send message" });
+  }
+});
+
+/* ADD ROLE */
+app.post("/add-role", async (req, res) => {
+  try {
+    const { guildId, memberId, roleId } = req.body;
+
+    const guild = await bot.guilds.fetch(guildId);
+    const member = await guild.members.fetch(memberId);
+
+    await member.roles.add(roleId);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to add role" });
+  }
+});
+
+/* REMOVE ROLE */
+app.post("/remove-role", async (req, res) => {
+  try {
+    const { guildId, memberId, roleId } = req.body;
+
+    const guild = await bot.guilds.fetch(guildId);
+    const member = await guild.members.fetch(memberId);
+
+    await member.roles.remove(roleId);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to remove role" });
+  }
+});
+
+/* KICK */
+app.post("/kick", async (req, res) => {
+  try {
+    const { guildId, memberId } = req.body;
+
+    const guild = await bot.guilds.fetch(guildId);
+    const member = await guild.members.fetch(memberId);
+
+    await member.kick();
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to kick member" });
+  }
+});
+
+/* BAN */
+app.post("/ban", async (req, res) => {
+  try {
+    const { guildId, memberId } = req.body;
+
+    const guild = await bot.guilds.fetch(guildId);
+
+    await guild.members.ban(memberId);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to ban member" });
+  }
+});
+
+/* ==========================
+   START SERVER
+========================== */
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
