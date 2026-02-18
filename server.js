@@ -288,3 +288,22 @@ app.post("/removeRole", async (req, res) => {
   }
 });
 
+app.get("/messages/:channelId", async (req, res) => {
+  try {
+    const channel = await bot.channels.fetch(req.params.channelId);
+    const messages = await channel.messages.fetch({ limit: 50 });
+
+    const formatted = messages.map(m => ({
+      id: m.id,
+      author: m.author.username,
+      avatar: m.author.displayAvatarURL(),
+      content: m.content,
+      time: m.createdAt
+    }));
+
+    res.json(formatted.reverse());
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch messages" });
+  }
+});
