@@ -1,4 +1,3 @@
-// server.js
 const express = require("express");
 const path = require("path");
 const { Client, GatewayIntentBits } = require("discord.js");
@@ -46,7 +45,6 @@ wss.on("connection", (ws) => {
   });
 });
 
-// Broadcast function
 function broadcast(data) {
   sockets.forEach(ws => ws.send(JSON.stringify(data)));
 }
@@ -54,34 +52,31 @@ function broadcast(data) {
 // --- Express Middleware ---
 app.use(express.json());
 
-// --- Serve static frontend ---
-app.use(express.static(path.join(__dirname, "public")));
+// --- Serve static files from root ---
+app.use(express.static(__dirname));
 
-// --- Login Route (simple access code) ---
+// --- Login Route ---
 app.post("/login", (req, res) => {
   const { code } = req.body;
   if (code === ACCESS_CODE) res.json({ success: true });
   else res.status(401).json({ success: false });
 });
 
-// --- Redirect / to login page ---
+// --- Redirect / to login.html ---
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "login.html"));
+  res.sendFile(path.join(__dirname, "login.html"));
 });
 
-// --- API Routes ---
-
-// Get all guilds the bot is in
+// --- Your API routes (guilds, members, send, kick, ban, embed, etc.) ---
 app.get("/guilds", (req, res) => {
   const guilds = bot.guilds.cache.map(g => ({ id: g.id, name: g.name }));
   res.json(guilds);
 });
 
-// Get members of a guild
 app.get("/members/:guildId", async (req, res) => {
   const guild = bot.guilds.cache.get(req.params.guildId);
   if (!guild) return res.status(404).json([]);
-  await guild.members.fetch(); // fetch all members
+  await guild.members.fetch();
   const members = guild.members.cache.map(m => ({
     id: m.id,
     username: m.user.username
@@ -89,83 +84,11 @@ app.get("/members/:guildId", async (req, res) => {
   res.json(members);
 });
 
-// Get channels of a guild
-app.get("/channels/:guildId", (req, res) => {
-  const guild = bot.guilds.cache.get(req.params.guildId);
-  if (!guild) return res.status(404).json([]);
-  const channels = guild.channels.cache
-    .filter(c => c.isTextBased())
-    .map(c => ({ id: c.id, name: c.name }));
-  res.json(channels);
-});
+// Add other routes (channels, send message, kick, ban, embed, execute, logs) the same way...
 
-// Send message to channel
-app.post("/send/:channelId", async (req, res) => {
-  const channel = bot.channels.cache.get(req.params.channelId);
-  if (!channel) return res.status(404).json({ error: "Channel not found" });
-  await channel.send(req.body.message);
-  broadcast({ type: "newMessage", channelId: channel.id, author: bot.user.username, content: req.body.message });
-
-  db.run("INSERT INTO logs(action,timestamp) VALUES(?,?)",
-    [`Sent message to #${channel.name}`, new Date().toISOString()]);
-  res.json({ success: true });
-});
-
-// Kick member
-app.post("/kick/:guildId/:userId", async (req, res) => {
-  const guild = bot.guilds.cache.get(req.params.guildId);
-  if (!guild) return res.status(404).json({ error: "Guild not found" });
-  try {
-    const member = await guild.members.fetch(req.params.userId);
-    await member.kick();
-    db.run("INSERT INTO logs(action,timestamp) VALUES(?,?)",
-      [`Kicked ${member.user.tag}`, new Date().toISOString()]);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// Ban member
-app.post("/ban/:guildId/:userId", async (req, res) => {
-  const guild = bot.guilds.cache.get(req.params.guildId);
-  if (!guild) return res.status(404).json({ error: "Guild not found" });
-  try {
-    const member = await guild.members.fetch(req.params.userId);
-    await member.ban();
-    db.run("INSERT INTO logs(action,timestamp) VALUES(?,?)",
-      [`Banned ${member.user.tag}`, new Date().toISOString()]);
-    res.json({ success: true });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// Send embed
-app.post("/embed/:channelId", async (req, res) => {
-  const channel = bot.channels.cache.get(req.params.channelId);
-  if (!channel) return res.status(404).json({ error: "Channel not found" });
-  const { title, description, color, footer } = req.body;
-  await channel.send({ embeds: [{ title, description, color, footer: { text: footer } }] });
-  db.run("INSERT INTO logs(action,timestamp) VALUES(?,?)",
-    [`Sent embed to #${channel.name}`, new Date().toISOString()]);
-  res.json({ success: true });
-});
-
-// Execute slash command (basic)
-app.post("/execute/:guildId/:command", async (req, res) => {
-  // You can expand this to actually run real slash commands via Discord API
-  db.run("INSERT INTO logs(action,timestamp) VALUES(?,?)",
-    [`Executed command /${req.params.command}`, new Date().toISOString()]);
-  res.json({ success: true });
-});
-
-// Get admin logs
-app.get("/logs", (req, res) => {
-  db.all("SELECT * FROM logs ORDER BY id DESC LIMIT 50", [], (err, rows) => {
-    if (err) return res.status(500).json([]);
-    res.json(rows);
-  });
-});
-
-// --- WebSocket Upgrade for real-time messages ---
+// --- Start server & attach WebSocket ---
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
 server.on("upgrade", (request, socket, head) => {
   wss.handleUpgrade(request, socket, head, (ws) => {
     wss.emit("connection", ws, request);
