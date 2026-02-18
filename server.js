@@ -236,3 +236,55 @@ app.get("/logs", (req, res) => {
     res.json(rows);
   });
 });
+
+// ===============================
+// GET ROLES
+// ===============================
+app.get("/roles/:guildId", (req, res) => {
+  const guild = bot.guilds.cache.get(req.params.guildId);
+  if (!guild) return res.json([]);
+
+  const roles = guild.roles.cache
+    .filter(r => r.name !== "@everyone")
+    .map(r => ({
+      id: r.id,
+      name: r.name
+    }));
+
+  res.json(roles);
+});
+
+// ===============================
+// ADD ROLE
+// ===============================
+app.post("/addRole", async (req, res) => {
+  const { guildId, userId, roleId } = req.body;
+
+  try {
+    const guild = bot.guilds.cache.get(guildId);
+    const member = await guild.members.fetch(userId);
+    await member.roles.add(roleId);
+    logAction(`Added role to ${member.user.username}`);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===============================
+// REMOVE ROLE
+// ===============================
+app.post("/removeRole", async (req, res) => {
+  const { guildId, userId, roleId } = req.body;
+
+  try {
+    const guild = bot.guilds.cache.get(guildId);
+    const member = await guild.members.fetch(userId);
+    await member.roles.remove(roleId);
+    logAction(`Removed role from ${member.user.username}`);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
